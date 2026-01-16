@@ -5,7 +5,6 @@ import tkinter as tk
 from tkinter import messagebox
 import requests
 import xml.etree.ElementTree as ET
-import os
 import threading
 import time
 from cryptography.hazmat.primitives.serialization import pkcs12, Encoding, PrivateFormat, NoEncryption
@@ -19,6 +18,24 @@ COR_BOTAO = "#3b82f6"
 data_atual = datetime.now()
 nome_pasta = data_atual.strftime("%Y-%m-%d_%H%M")
 pasta_origem = 'docs'
+pasta_autorizados = 'xmls_autorizados'
+pasta_invalidas = 'xmls_nao_autorizados'
+log_tecnico = 'log'
+
+
+try:
+    with open('log.txt','a') as z:
+        z.write('\n\n\n\n\n')
+        z.write('*************************\n')
+        z.write(f' NOVO LOG {data_atual}\n')
+        z.write('*************************\n')
+        z.write('\n\n\n\n\n')
+
+except FileExistsError:
+    pass
+
+except Exception as erro:
+    messagebox.showerror(message=f'{erro}')
 
 
 def load_pfx(pfx_path, password):
@@ -84,25 +101,28 @@ def extrair_prot(xml_retorno):
 
     root = ET.fromstring(xml_retorno)
 
-    prot = root.find(
-        ".//ws:nfeResultMsg/nfe:retConsSitNFe/nfe:protNFe/nfe:infProt",
+    ret = root.find(
+        ".//ws:nfeResultMsg/nfe:retConsSitNFe",
         ns
     )
 
-    if prot is None:
+    if ret is None:
         return None
-
+    
+    infProt = ret.find(".//nfe:protNFe/nfe:infProt", ns)
     return {
-        "cStat": prot.find("nfe:cStat", ns).text if prot.find("nfe:cStat", ns) is not None else None,
-        "xMotivo": prot.find("nfe:xMotivo", ns).text if prot.find("nfe:xMotivo", ns) is not None else None,
-        "nProt": prot.find("nfe:nProt", ns).text if prot.find("nfe:nProt", ns) is not None else None,
+        "cStat": ret.find("nfe:cStat", ns).text if ret.find("nfe:cStat", ns) is not None else None,
+        "xMotivo": ret.find("nfe:xMotivo", ns).text if ret.find("nfe:xMotivo", ns) is not None else None,
+        "nProt": infProt.find("nfe:nProt", ns).text if infProt is not None else None,
+        "infProt": infProt is not None
     }
+
 
 
 def janela():
     global campo_query, janela_principal
     janela_principal = tk.Tk()
-    janela_principal.title("BDX 2.1")  # Título da janela
+    janela_principal.title("BDX 2.2")  # Título da janela
     janela_principal.geometry("600x600")  # Largura x Altura
     janela_principal.configure(bg=COR_FUNDO)
     
@@ -250,11 +270,23 @@ def validar_xml(pasta,certificado,senha):
                         campo_query1.after(0, lambda: campo_query1.insert(tk.END,f"\n"))
                         campo_query1.after(0, lambda: campo_query1.insert(tk.END,f"***CHAVE JÁ VALIDADA***: {nome_arquivo}",'amarelo'))
                         campo_query1.after(0, lambda: campo_query1.insert(tk.END,f"\n"))
-                        os.remove(arquivo_xml)
+                        try:
+                            with open('log.txt', 'a', encoding='utf-8') as g:
+                                g.write('*************************\n')
+                                g.write(f'COO {chave}\n')
+                                g.write(f'CHAVE {chave}\n')
+                                g.write('Info: Chave já autorizada!\n')
+                                g.write('*************************\n')
+
+                        except Exception as erro:
+                                    messagebox.showerror(message=f'{erro}')
+
                         red.discard(chave)
                         red1.discard(nome_arquivo)
                         continue
                     else:
+                        os.makedirs(pasta_autorizados, exist_ok=True)
+                        os.makedirs(pasta_invalidas, exist_ok=True)
                         chave_modificada = nome_arquivo.removesuffix('-nfe.xml')
                         xml_nfe = limpar(xml_consulta(chave_modificada))
                         soap_xml = montar_soap(xml_nfe)
@@ -267,45 +299,64 @@ def validar_xml(pasta,certificado,senha):
                             campo_query1.after(0, lambda e=erro: campo_query1.insert(tk.END, f"NÚMERO DA CHAVE: {chave} {str(e)}" + "\n",'branco'))
 
                         else:
-                            ret = extrair_prot(response.text)  
+                            ret = extrair_prot(response.text) 
+                            if not ret:
+                                 campo_query1.after(0, lambda: campo_query1.insert(tk.END, "⚠️ Resposta inválida da SEFAZ\n", 'vermelho'))
+                                 continue
+                            codigo = ret.get("cStat")   
+                            motivo = ret.get("xMotivo")      
+                            try:
+                                with open('log.txt', 'a', encoding='utf-8') as g:
+                                        g.write('*************************\n')
+                                        g.write(f'COO {chave}\n')
+                                        g.write(f'CHAVE {chave}\n')
+                                        g.write(f'{codigo} : {motivo}\n')
+                                        g.write('*************************\n')
+
+                            except Exception as erro:
+                                    messagebox.showerror(message=f'{erro}')      
+
                             campo_query1.after(0, lambda: campo_query1.insert(tk.END, "\n" + "*"*30 + "\n",'branco'))
-                            if ret:  # XML encontrado via SEFAZ
+                            if ret and ret.get("cStat") == "100":
                                 qtd_itens_validos +=1
-                                campo_query1.after(0, lambda: campo_query1.insert(tk.END,'🟢 XML ENCONTRADO! 🟢\n','verde'))
+                                # XML encontrado via SEFAZ
+                                campo_query1.after(0, lambda: campo_query1.insert(tk.END,'🟢 XML AUTORIZADO! 🟢⚠️\n','verde'))
                                 campo_query1.after(0, lambda: campo_query1.insert(tk.END,f"COO: {chave}\n",'verde'))
                                 campo_query1.after(0, lambda: campo_query1.insert(tk.END,f"CHAVE: {nome_arquivo}\n",'verde'))
-                                campo_query1.after(0, lambda: campo_query1.insert(tk.END, f"cStat: {ret.get('cStat')}\n",'verde'))
-                                campo_query1.after(0, lambda: campo_query1.insert(tk.END, f"Motivo: {ret.get('xMotivo')}\n",'verde'))
+                                campo_query1.after(0, lambda: campo_query1.insert(tk.END, f"Info:{codigo} -> {motivo}\n",'verde'))
                                 campo_query1.after(0, lambda: campo_query1.insert(tk.END, f"Protocolo: {ret.get('nProt')}\n",'verde'))
                                 campo_query1.see(tk.END)
                                 green.add(chave)
                                 red.discard(chave)
                                 red1.discard(nome_arquivo)
                                 green1.add(nome_arquivo)
-
+                                caminho_origem = os.path.join(pasta_origem, nome_arquivo)
+                                caminho_destino = os.path.join(pasta_autorizados, nome_arquivo)
+                                shutil.copy2(caminho_origem, caminho_destino)
+                               
                             else:  
                                 if chave not in green:
                                     red.add(chave)
                                 if chave not in green1:
                                     red1.add(nome_arquivo)    
                                 arquivo_xml = os.path.join(raiz, nome_arquivo)
-                                campo_query1.after(0, lambda: campo_query1.insert(tk.END,'⚠️ XML NAO ENCONTRADO! ⚠️\n','vermelho'))
+                                campo_query1.after(0, lambda: campo_query1.insert(tk.END, f"Info: {codigo} -> {motivo}\n",'vermelho'))
                                 campo_query1.after(0, lambda: campo_query1.insert(tk.END, f"COO: {chave}\n",'vermelho'))
                                 campo_query1.after(0, lambda: campo_query1.insert(tk.END, f"CHAVE: {nome_arquivo}\n",'vermelho'))
-                                try:
-                                    os.remove(arquivo_xml)
-                                except:
-                                    campo_query1.after(0, lambda: campo_query1.insert(tk.END, f"OBS: XML NÃO ENCONTRADO DENTRO DA PASTA\n",'azul'))
-                    
+
+                                caminho_origem = os.path.join(pasta_origem, nome_arquivo)
+                                caminho_destino = os.path.join(pasta_invalidas, nome_arquivo)
+                                shutil.copy2(caminho_origem, caminho_destino)
+                                
                     campo_query1.see(tk.END)    
                     time.sleep(2)
 
     campo_query1.after(0, lambda: campo_query1.insert(tk.END, "\n" + "*"*30 + "\n",'branco'))  
-    campo_query1.after(0, lambda: campo_query1.insert(tk.END, f'QUANTIDADE DE XML NA PASTA SELECIONADA: {qtd_itens}'+"\n",'branco'))    
-    campo_query1.after(0, lambda: campo_query1.insert(tk.END, f'QUANTIDADE DE XML VÁLIDO NA SEFAZ: {qtd_itens_validos}'+"\n",'branco'))    
-    campo_query1.after(0, lambda: campo_query1.insert(tk.END, f'QUANTIDADE DE XML INVÁLIDO NA SEFAZ: {qtd_itens - qtd_itens_validos}'+"\n",'branco')) 
-    campo_query1.after(0, lambda: campo_query1.insert(tk.END, f'LISTA DOS VÁLIDADOS: {green}\n'))
-    campo_query1.after(0, lambda: campo_query1.insert(tk.END, f'LISTA DOS NÃO VÁLIDADOS: {red}\n'))
+    campo_query1.after(0, lambda: campo_query1.insert(tk.END, f'QUANTIDADE DE XML ANALISADOS: {qtd_itens}'+"\n",'branco'))    
+    campo_query1.after(0, lambda: campo_query1.insert(tk.END, f'QUANTIDADE DE XML AUTORIZADOS NA SEFAZ: {qtd_itens_validos}'+"\n",'branco'))    
+    campo_query1.after(0, lambda: campo_query1.insert(tk.END, f'QUANTIDADE DE XML NÃO AUTORIZADOS NA SEFAZ: {qtd_itens - qtd_itens_validos}'+"\n",'branco')) 
+    campo_query1.after(0, lambda: campo_query1.insert(tk.END, f'LISTA DOS AUTORIZADOS: {green}\n'))
+    campo_query1.after(0, lambda: campo_query1.insert(tk.END, f'LISTA DOS NÃO AUTORIZADOS: {red}\n'))
     campo_query1.see(tk.END) 
     botao_validar_xml.config(state="normal")
     botao_voltar.config(state="normal")
@@ -356,7 +407,7 @@ def janela_nova():
     global janela2, campo_query1,botao_validar_xml,botao_voltar,caminho_certificado
     janela_principal.withdraw()
     janela2 = tk.Toplevel()
-    janela2.title("BDX 2.1")
+    janela2.title("BDX 2.2")
     janela2.geometry("1000x800")
     frame_campos = tk.Frame(janela2,bg=COR_FUNDO)
     frame_campos.pack(pady=10)
