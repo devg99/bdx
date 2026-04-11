@@ -167,9 +167,9 @@ def validar_xml(certificado, senha, xml_bruto, xml_saida):
 
     falhas_consecutivas = 0
     falhas_656 = 0
-    intervalo_minimo = random.uniform(1.5, 3.0)
 
     while not fila.empty():
+        intervalo_minimo = random.uniform(2.0, 5.0)
         janela_validacao_xml.after(0, lambda: campo_query99.insert(
             tk.END, "\n" + "*" * 30 + "\n", 'branco'
         ))
