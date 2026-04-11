@@ -116,7 +116,7 @@ def load_pfx(pfx_path, password):
         with open("key.pem","wb") as f:
             f.write(key_pem)
 
-        return "cert.pem", "key.pem"  
+        return "cert.pem", "key.pem"
     except Exception as erro:
         janela_validacao_xml.after(0,lambda e=erro: messagebox.showerror(f"Erro de certificado",{str(e)}))
         return None,None
@@ -138,7 +138,6 @@ def carregar_fila(xml_bruto):
         for x in arquivos:
             fila.put((raiz, x))
 
-ultimo_request = 0
 def validar_xml(certificado, senha, xml_bruto, xml_saida):
     global ultimo_request   
     if not os.path.exists(xml_bruto):
@@ -167,8 +166,6 @@ def validar_xml(certificado, senha, xml_bruto, xml_saida):
 
     falhas_consecutivas = 0
     falhas_656 = 0
-    intervalo_minimo = 0.5
-
     while not fila.empty():
         janela_validacao_xml.after(0, lambda: campo_query99.insert(
             tk.END, "\n" + "*" * 30 + "\n", 'branco'
@@ -219,12 +216,6 @@ def validar_xml(certificado, senha, xml_bruto, xml_saida):
         # -----------------------------
         # 2. Consulta SEFAZ
         # -----------------------------
-        agora = time.time()
-        tempo_passado = agora - ultimo_request
-        if tempo_passado < intervalo_minimo:
-            espera = max(0, intervalo_minimo - tempo_passado)
-            time.sleep(espera)
-
         try:
             xml_nfe = limpar(xml_consulta(chave_modificada))
             soap_xml = montar_soap(xml_nfe)
@@ -240,7 +231,6 @@ def validar_xml(certificado, senha, xml_bruto, xml_saida):
                 verify=False,
                 timeout=(5, 15)
             )
-            ultimo_request = time.time()
 
         except Exception as e:
             red.add(chave_curta)
@@ -349,6 +339,7 @@ def validar_xml(certificado, senha, xml_bruto, xml_saida):
                 'vermelho'
             ))
         janela_validacao_xml.after(0, lambda: campo_query99.see(tk.END))
+        espera_segura(min(falhas_consecutivas, 20))    
         # -----------------------------
         # 6. controle de taxa SEFAZ
         # -----------------------------
@@ -412,9 +403,9 @@ def buscar_xml_por_chave():
         campo_query.config(state='disabled')     
         campo_query.see(tk.END)
     else:
-        messagebox.showerror(message='Verifique se a pasta ‘Docs’ ou o arquivo ‘chave.txt’ existem na pasta onde está o executável.')
-    
+        messagebox.showerror(message='Verifique se a pasta "Docs" / "xml_bruto" ou arquivo "chave.txt"’ existem na pasta onde está o executável.')
 
+    
 def buscar_xml_por_coo():
     chaves=[]
     arquivo_lista = "coo.txt"
@@ -461,7 +452,7 @@ def buscar_xml_por_coo():
         campo_query.see(tk.END)    
         
     else:
-        messagebox.showerror(message='Verifique se a pasta ‘Docs’ ou o arquivo coo.txt’ existem na pasta onde está o executável.')
+        messagebox.showerror(message='Verifique se a pasta "Docs" / "xml_bruto" ou arquivo "coo.txt"’ existem na pasta onde está o executável.')
 
 
 def selecionar_pasta(label):
