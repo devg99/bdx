@@ -160,8 +160,10 @@ def validar_xml(certificado, senha, xml_bruto, xml_saida):
     
     janela_validacao_xml.after(0, lambda: botao_validar_xml.config(state='disabled'))
     janela_validacao_xml.after(0, lambda: botao_voltar.config(state='disabled'))
+    janela_validacao_xml.after(0, lambda: botao_caminho_certificado.config(state='disabled'))
     green = set()
     red = set()
+    contador_erros = 0
 
     carregar_fila(xml_bruto)
 
@@ -209,6 +211,7 @@ def validar_xml(certificado, senha, xml_bruto, xml_saida):
                     f"🟢 CHAVE {chave_modificada} VÁLIDADA DE NUMERAÇÃO: {chave_curta}\n",
                     'verde'
                 ))
+                red.discard(chave_curta)
                 shutil.copy2(arquivo_completo, saida)
                 fila.task_done() 
                 continue
@@ -284,6 +287,7 @@ def validar_xml(certificado, senha, xml_bruto, xml_saida):
         # 4. Autorizado
         # -----------------------------
         if codigo == "100":
+            contador_erros = 0
             falhas_consecutivas = 0
             falhas_656 = 0
             green.add(chave_curta)
@@ -356,19 +360,23 @@ def validar_xml(certificado, senha, xml_bruto, xml_saida):
             time.sleep(tempo_pausa)
             continue
 
-        else:
-            if chave_curta in red:
-                time.sleep(10)
+        else:  
             falhas_consecutivas = 0
             falhas_656 = 0
             red.add(chave_curta)
             shutil.copy2(arquivo_completo, invalidos)
             janela_validacao_xml.after(0, lambda: campo_query99.insert(
                 tk.END,
-                f"❌ {codigo} -> {motivo} | {chave_modificada}\n",
+                f"❌ {codigo} -> {motivo} | {chave_modificada} [{chave_curta}]\n",
                 'vermelho'
             ))
+            contador_erros +=1
+            if contador_erros >= 4:
+                time.sleep(60)
+                contador_erros = 0
+
             fila.task_done() 
+            continue
         
         janela_validacao_xml.after(0, lambda: campo_query99.see(tk.END))
 
@@ -385,102 +393,115 @@ def validar_xml(certificado, senha, xml_bruto, xml_saida):
     janela_validacao_xml.after(0, lambda: campo_query99.see(tk.END))
     janela_validacao_xml.after(0, lambda: botao_voltar.config(state='normal'))
     janela_validacao_xml.after(0, lambda: botao_validar_xml.config(state='normal'))
+    janela_validacao_xml.after(0, lambda: botao_caminho_certificado.config(state='normal'))
 
 
 def buscar_xml_por_chave():
     arquivo_lista = "chave.txt"
+    if not os.path.exists(arquivo_lista):
+        messagebox.showerror(message='O arquivo "coo.txt" não foi localizado')
+        return
 
-    if os.path.exists(arquivo_lista) and os.path.exists(pasta_origem) and os.path.exists(xml_bruto):
-        pasta_destino = f"{xml_bruto}"
-        campo_query.config(state='normal') 
-        campo_query.delete("1.0",tk.END)
+    if not os.path.exists(pasta_origem):
+        messagebox.showerror(message='A pasta "Docs" não foi localizada')
+        return
 
-        # Lê a lista de chaves (sem extensão, sem -nfe)
-        chaves = []
-        with open(arquivo_lista, "r", encoding="utf-8") as f:
-          for linha in f:
-              linha = linha.strip().lower()
-              chaves.append(linha)  
-        encontrados = set()
-        # Percorre a pasta e subpastas
-        for raiz, dirs, arquivos in os.walk(pasta_origem):
-            for nome_arquivo in arquivos:
+    if not os.path.exists(xml_bruto):
+        messagebox.showerror(message='A pasta "xml_bruto" não foi localizada')
+        return
+
+    pasta_destino = f"{xml_bruto}"
+    campo_query.config(state='normal') 
+    campo_query.delete("1.0",tk.END)
+
+    # Lê a lista de chaves (sem extensão, sem -nfe)
+    chaves = []
+    with open(arquivo_lista, "r", encoding="utf-8") as f:
+        for linha in f:
+            linha = linha.strip().lower()
+            chaves.append(linha)  
+    encontrados = set()
+    # Percorre a pasta e subpastas
+    for raiz, dirs, arquivos in os.walk(pasta_origem):
+        for nome_arquivo in arquivos:
+            nome_lower = nome_arquivo.lower()
+            for chave in chaves:
+                chave_modificada = chave + '-nfe.xml'
+                if chave_modificada == nome_lower:
+                    caminho_origem = os.path.join(raiz, nome_arquivo)
+                    caminho_destino = os.path.join(pasta_destino, nome_arquivo)
+                    shutil.copy2(caminho_origem, caminho_destino)
+                    encontrados.add(chave)
+                    campo_query.insert(tk.END, f"✅ Copiado: {nome_arquivo}\n")
+                    break  # evita copiar o mesmo arquivo mais de uma vez
+
+    # Mostra os que não foram encontrados
+    nao_encontrados = [c for c in chaves if c not in encontrados]
+    if nao_encontrados:
+        campo_query.insert(tk.END,"\n⚠️ Arquivos não encontrados:\n")     
+        with open("chaves_nao_encontradas.txt", "w") as arquivo:
+                for c in nao_encontrados:
+                    arquivo.write(f"{c}\n")                
+                    campo_query.insert(tk.END,f"{c}\n")
+    else:
+        campo_query.insert(tk.END,"\n🟢 Todos os arquivos foram encontrados e copiados!")
+
+    campo_query.config(state='disabled')     
+    campo_query.see(tk.END)
+
+
+def buscar_xml_por_coo():
+    chaves=[]
+    arquivo_lista = "coo.txt"
+    if not os.path.exists(arquivo_lista):
+        messagebox.showerror(message='O arquivo "coo.txt" não foi localizado')
+        return
+
+    if not os.path.exists(pasta_origem):
+        messagebox.showerror(message='A pasta "Docs" não foi localizada')
+        return
+
+    if not os.path.exists(xml_bruto):
+        messagebox.showerror(message='A pasta "xml_bruto" não foi localizada')
+        return
+
+    campo_query.config(state='normal') 
+    campo_query.delete("1.0",tk.END)
+    pasta_destino = f"{xml_bruto}"
+    campo_query.delete("1.0",tk.END)
+    with open(arquivo_lista, "r", encoding="utf-8") as f:
+        for linha in f:
+            linha = linha.strip().lower()
+            chaves.append(linha)  
+    encontrados = set()
+    for raiz, dirs, arquivos in os.walk(pasta_origem):
+        for nome_arquivo in arquivos:
+            if nome_arquivo[-8:] == '-nfe.xml':
                 nome_lower = nome_arquivo.lower()
                 for chave in chaves:
-                    chave_modificada = chave + '-nfe.xml'
-                    if chave_modificada == nome_lower:
+                    if str(chave).lstrip("0") == nome_lower[25:34].lstrip("0"):
+                        # Cria a pasta de destino se não existir
                         caminho_origem = os.path.join(raiz, nome_arquivo)
                         caminho_destino = os.path.join(pasta_destino, nome_arquivo)
                         shutil.copy2(caminho_origem, caminho_destino)
                         encontrados.add(chave)
                         campo_query.insert(tk.END, f"✅ Copiado: {nome_arquivo}\n")
                         break  # evita copiar o mesmo arquivo mais de uma vez
-
-        # Mostra os que não foram encontrados
-        nao_encontrados = [c for c in chaves if c not in encontrados]
-        if nao_encontrados:
-            campo_query.insert(tk.END,"\n⚠️ Arquivos não encontrados:\n")     
-            with open("chaves_nao_encontradas.txt", "w") as arquivo:
-                    for c in nao_encontrados:
-                        arquivo.write(f"{c}\n")                
-                        campo_query.insert(tk.END,f"{c}\n")
-        else:
-            campo_query.insert(tk.END,"\n🟢 Todos os arquivos foram encontrados e copiados!")
-
-        campo_query.config(state='disabled')     
-        campo_query.see(tk.END)
-    else:
-        messagebox.showerror(message='Verifique se a pasta "Docs" / "xml_bruto" ou o arquivo "chave.txt" existem na pasta onde está o executável.')
-    
-
-def buscar_xml_por_coo():
-    chaves=[]
-    arquivo_lista = "coo.txt"
-
-    if os.path.exists(arquivo_lista) and os.path.exists(pasta_origem) and os.path.exists(xml_bruto):
-        campo_query.config(state='normal') 
-        campo_query.delete("1.0",tk.END)
-        pasta_destino = f"{xml_bruto}"
-        campo_query.delete("1.0",tk.END)
-        with open(arquivo_lista, "r", encoding="utf-8") as f:
-          for linha in f:
-              linha = linha.strip().lower()
-              chaves.append(linha)  
-        encontrados = set()
-        for raiz, dirs, arquivos in os.walk(pasta_origem):
-            for nome_arquivo in arquivos:
-                if nome_arquivo[-8:] == '-nfe.xml':
-                    nome_lower = nome_arquivo.lower()
-                    for chave in chaves:
-                        if str(chave).lstrip("0") == nome_lower[25:34].lstrip("0"):
-                            # Cria a pasta de destino se não existir
-                            caminho_origem = os.path.join(raiz, nome_arquivo)
-                            caminho_destino = os.path.join(pasta_destino, nome_arquivo)
-                            shutil.copy2(caminho_origem, caminho_destino)
-                            encontrados.add(chave)
-                            campo_query.insert(tk.END, f"✅ Copiado: {nome_arquivo}\n")
-                            break  # evita copiar o mesmo arquivo mais de uma vez
-                        else:
-                            pass
-                else:
-                    pass  
-        # Mostra os que não foram encontrados
-        nao_encontrados = [c for c in chaves if c not in encontrados]
-        if nao_encontrados:
+                    
+    # Mostra os que não foram encontrados
+    nao_encontrados = [c for c in chaves if c not in encontrados]
+    if nao_encontrados:
             campo_query.insert(tk.END,"\n⚠️ Arquivos não encontrados:\n")
             with open("coos_nao_encontrados.txt", "w") as arquivo:
                 for c in nao_encontrados:
                     arquivo.write(f"{c}\n")     
                     campo_query.insert(tk.END,f"{c}\n")
-        else:
-            campo_query.insert(tk.END,"\n🟢 Todos os arquivos foram encontrados e copiados!")
-            
-        campo_query.config(state='disabled') 
-        campo_query.see(tk.END)    
-        
     else:
-        messagebox.showerror(message='Verifique se a pasta "Docs" / "xml_bruto" ou o arquivo "coo.txt" existem na pasta onde está o executável.')
-
+        campo_query.insert(tk.END,"\n🟢 Todos os arquivos foram encontrados e copiados!")
+            
+    campo_query.config(state='disabled') 
+    campo_query.see(tk.END)    
+ 
 
 def selecionar_pasta(label):
     pasta = filedialog.askdirectory()
@@ -557,12 +578,12 @@ janela_principal.geometry("600x600")  # Largura x Altura
 janela_principal.configure(bg=COR_FUNDO)
 frame_botoes = tk.Frame(janela_principal, bg=COR_FUNDO)
 frame_botoes.pack(pady=10)
-botao = tk.Button(frame_botoes, text="Buscar xml por chave",
+botao = tk.Button(frame_botoes, text="Xml por chave",
                   command=buscar_xml_por_chave,
                   padx=20, pady=20, fg=COR_TEXTO, bg=COR_BOTAO)
 botao.pack(side="left", padx=5)
 
-botao2 = tk.Button(frame_botoes, text="Buscar xml por coo",
+botao2 = tk.Button(frame_botoes, text="Xml por coo",
                    command=buscar_xml_por_coo,
                    padx=20, pady=20, fg=COR_TEXTO, bg=COR_BOTAO)
 botao2.pack(side="left", padx=5)
