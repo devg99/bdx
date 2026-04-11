@@ -19,12 +19,12 @@ COR_BOTAO = "#3b82f6"
 pasta_origem = 'docs'
 xml_bruto = 'xml_bruto'
 xml_lapidado = 'xml_lapidado'
-xml_consumo_indevido = 'xml_consumo_indevido'
+xml_instabilidade = 'xml_instabilidade'
 xml_invalido = 'xml_invalido'
 
 os.makedirs(xml_bruto, exist_ok=True)
 os.makedirs(xml_lapidado, exist_ok=True)
-os.makedirs(xml_consumo_indevido, exist_ok=True)
+os.makedirs(xml_instabilidade, exist_ok=True)
 os.makedirs(xml_invalido, exist_ok=True)
 
 
@@ -169,11 +169,10 @@ def validar_xml(certificado, senha, xml_bruto, xml_saida):
     falhas_656 = 0
 
     while not fila.empty():
-        intervalo_minimo = random.uniform(2.0, 5.0)
         janela_validacao_xml.after(0, lambda: campo_query99.insert(
-            tk.END, "\n" + "*" * 30 + "\n", 'branco'
+            tk.END, "\n", 'branco'
         ))
-
+        intervalo_minimo = random.uniform(6.0, 10)
         raiz, x = fila.get()
 
         arquivo_completo = os.path.join(raiz, x)
@@ -182,7 +181,7 @@ def validar_xml(certificado, senha, xml_bruto, xml_saida):
         chave_curta = chave_modificada[25:34].lstrip("0")
 
         saida = os.path.join(xml_saida, x)
-        indevidos = os.path.join(xml_consumo_indevido, x)
+        instabilidade = os.path.join(xml_instabilidade, x)
         invalidos = os.path.join(xml_invalido, x)
 
         # -----------------------------
@@ -200,6 +199,7 @@ def validar_xml(certificado, senha, xml_bruto, xml_saida):
                     tk.END,
                     f"🟢 CHAVE {chave_modificada} IGNORADA POIS JÁ FOI ENCONTRADO XML CORRETO DE NUMERAÇÃO: {chave_curta}\n",
                     'amarelo'))
+                fila.task_done() 
                 continue
 
             if prot is not None:
@@ -210,10 +210,13 @@ def validar_xml(certificado, senha, xml_bruto, xml_saida):
                     'verde'
                 ))
                 shutil.copy2(arquivo_completo, saida)
+                fila.task_done() 
                 continue
 
         except Exception as e:
             janela_validacao_xml.after(0, lambda e=e: campo_query99.insert(tk.END, f"Erro XML: {e}\n", 'vermelho'))
+            fila.task_done()
+            shutil.copy2(arquivo_completo, instabilidade)
             continue
 
         # -----------------------------
@@ -250,7 +253,8 @@ def validar_xml(certificado, senha, xml_bruto, xml_saida):
                 f"Erro SEFAZ {chave_modificada}: {e}\n",
                 'vermelho'
             ))
-
+            fila.task_done()
+            shutil.copy2(arquivo_completo, instabilidade)
             espera_segura(min(falhas_consecutivas, 20))
             continue
 
@@ -260,9 +264,17 @@ def validar_xml(certificado, senha, xml_bruto, xml_saida):
         ret = extrair_prot(response.text)
 
         if not ret:
+            shutil.copy2(arquivo_completo, instabilidade)  
             red.add(chave_curta)
             falhas_consecutivas += 1
             espera_segura(min(falhas_consecutivas, 20))
+            fila.task_done() 
+            shutil.copy2(arquivo_completo, instabilidade)
+            janela_validacao_xml.after(0, lambda: campo_query99.insert(
+                tk.END,
+                f"🟢 CHAVE {chave_modificada} -> {chave_curta} erro na tradução das informações\n",
+                'branco'
+            ))
             continue
 
         codigo = ret.get("cStat")
@@ -322,23 +334,31 @@ def validar_xml(certificado, senha, xml_bruto, xml_saida):
 
             except Exception as e:
                 janela_validacao_xml.after(0, lambda e=e: campo_query99.insert(tk.END, f"Erro montagem: {e}\n",'vermelho'))
-
+            fila.task_done() 
         # -----------------------------
         # 5. Rejeitado / não encontrado
         # -----------------------------
         elif codigo == "656":
             falhas_656 +=1
             red.add(chave_curta)
-            shutil.copy2(arquivo_completo, indevidos)
-            janela_validacao_xml.after(0, lambda: campo_query99.insert(
-            tk.END,
-            f"⚠️ CONSUMO INDEVIDO (656) -> Aguarde... | {chave_modificada}\n",
-            'roxo'
-            ))
-            espera_segura(min (2 ** falhas_656, 120))
+            # Se for as primeiras falhas, tenta pausa curta. Se persistir, pausa longa.
+            if falhas_656 <= 2:
+                tempo_pausa = 305 # ~5 min
+                msg = f"⚠️ 656 (Curto) -> Pausando 5 min... | Tentativa {falhas_656}\n"
+            else:
+                tempo_pausa = 3665 # 61 min
+                msg = "🛑 656 (Longo) -> Bloqueio persistente. Pausando 61 min...\n"
+
+            janela_validacao_xml.after(0, lambda: campo_query99.insert(tk.END, msg, 'roxo'))
+            
+            fila.put((raiz, x)) # Devolve a nota para tentar de novo após a pausa
+            
+            time.sleep(tempo_pausa)
             continue
 
         else:
+            if chave_curta in red:
+                time.sleep(10)
             falhas_consecutivas = 0
             falhas_656 = 0
             red.add(chave_curta)
@@ -348,13 +368,10 @@ def validar_xml(certificado, senha, xml_bruto, xml_saida):
                 f"❌ {codigo} -> {motivo} | {chave_modificada}\n",
                 'vermelho'
             ))
+            fila.task_done() 
+        
         janela_validacao_xml.after(0, lambda: campo_query99.see(tk.END))
-        # -----------------------------
-        # 6. controle de taxa SEFAZ
-        # -----------------------------
-        janela_validacao_xml.after(0, lambda: campo_query99.insert(
-            tk.END,"*" * 30 + "\n", 'branco'
-        ))
+
     janela_validacao_xml.after(0, lambda: campo_query99.insert(
         tk.END,
         f"\nNÚMERAÇÕES VÁLIDADAS NA SEFAZ: {green}\n",
