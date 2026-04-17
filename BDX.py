@@ -422,11 +422,11 @@ def validar_xml(certificado, senha):
     janela_validacao_xml.after(0, lambda: campo_query99.insert(
         tk.END,
         f"\nNÚMERAÇÕES VÁLIDADAS NA SEFAZ: {green}\n",
-        'branco')) 
+        'verde')) 
     janela_validacao_xml.after(0, lambda: campo_query99.insert(
         tk.END,
         f"\nNÚMERAÇÕES NÃO VÁLIDADAS NA SEFAZ: {red}\n",
-        'branco'
+        'vermelho'
     ))
         
     janela_validacao_xml.after(0, lambda: campo_query99.see(tk.END))
@@ -438,7 +438,7 @@ def validar_xml(certificado, senha):
 def buscar_xml_por_chave():
     arquivo_lista = "chave.txt"
     if not os.path.exists(arquivo_lista):
-        messagebox.showerror(message='O arquivo "coo.txt" não foi localizado')
+        messagebox.showerror(message='O arquivo "chave.txt" não foi localizado')
         return
 
     if not os.path.exists(pasta_origem):
