@@ -121,8 +121,6 @@ def load_pfx(pfx_path, password):
         janela_validacao_xml.after(0,lambda e=erro: messagebox.showerror(f"Erro de certificado",{str(e)}))
         return None,None
     
-  
-fila = queue.Queue()
 
 def espera_segura(falhas=0):
     base = 3
@@ -134,13 +132,15 @@ def espera_segura(falhas=0):
 
 
 def carregar_fila(xml_bruto):
+    fila_local = queue.Queue()
     for raiz, dirs, arquivos in os.walk(xml_bruto):
         for x in arquivos:
-            fila.put((raiz, x))
+            fila_local.put((raiz, x))
+    return fila_local
 
 ultimo_request = 0
-def validar_xml(certificado, senha, xml_bruto, xml_saida):
-    global ultimo_request   
+def validar_xml(certificado, senha):
+    global ultimo_request
     if not os.path.exists(xml_bruto):
         janela_validacao_xml.after(0, lambda: messagebox.showerror("Erro", "xml_bruto não encontrado!"))
         return
@@ -149,8 +149,16 @@ def validar_xml(certificado, senha, xml_bruto, xml_saida):
         janela_validacao_xml.after(0, lambda: messagebox.showerror("Erro", "Certificado não encontrado!"))
         return
     
-    if not os.path.exists(xml_saida):
+    if not os.path.exists(xml_lapidado):
         janela_validacao_xml.after(0, lambda: messagebox.showerror("Erro", "xml_lapidado não encontrado!"))
+        return
+    
+    if not os.path.exists(xml_invalido):
+        janela_validacao_xml.after(0, lambda: messagebox.showerror("Erro", "xml_invalido não encontrado!"))
+        return
+    
+    if not os.path.exists(xml_instabilidade):
+        janela_validacao_xml.after(0, lambda: messagebox.showerror("Erro", "xml_instabilidade não encontrado!"))
         return
 
     CERT_FILE, KEY_FILE = load_pfx(str(certificado).strip(), str(senha).strip())
@@ -163,64 +171,91 @@ def validar_xml(certificado, senha, xml_bruto, xml_saida):
     janela_validacao_xml.after(0, lambda: botao_caminho_certificado.config(state='disabled'))
     green = set()
     red = set()
+    
+    # -----------------------------
+    # 1. Se já tem protocolo no XML e se já foi validada em outra chave anteriormente
+    # -----------------------------
+    for raiz, dirs, arquivos in os.walk(xml_bruto):
+        for x in arquivos:
+            chave_modificada = x.removesuffix('-nfe.xml')
+            chave_curta = chave_modificada[25:34].lstrip("0")
+            janela_validacao_xml.after(0, lambda: campo_query99.see(tk.END))
+            saida = os.path.join(xml_lapidado, x)
+            instabilidade = os.path.join(xml_instabilidade, x)
+            invalidos = os.path.join(xml_invalido, x)
+            arquivo_completo = os.path.join(raiz, x)
+            try:
+                ns1 = {"nfe": "http://www.portalfiscal.inf.br/nfe"}
+                tree1 = ET.parse(arquivo_completo)
+                root1 = tree1.getroot()
+                prot1 = root1.find(".//nfe:protNFe", ns1)
+                if chave_curta in green:
+                    janela_validacao_xml.after(0, lambda: campo_query99.insert(
+                    tk.END,
+                    f"🟢 CHAVE {chave_modificada} IGNORADA POIS JÁ FOI ENCONTRADO XML CORRETO DE NUMERAÇÃO: {chave_curta}\n",
+                    'amarelo'))
+                    shutil.copy2(arquivo_completo, invalidos)
+                    os.remove(arquivo_completo)
+                    continue
+
+                if prot1 is not None:
+                    green.add(chave_curta)
+                    janela_validacao_xml.after(0, lambda: campo_query99.insert(
+                    tk.END,
+                    f"🟢 CHAVE {chave_modificada} VÁLIDADA DE NUMERAÇÃO: {chave_curta}\n",
+                    'verde'
+                    ))
+                    red.discard(chave_curta)
+                    shutil.copy2(arquivo_completo, saida)
+                    os.remove(arquivo_completo)
+                    continue
+            except Exception as e:
+                janela_validacao_xml.after(0, lambda e=e: campo_query99.insert(tk.END, f"Erro XML: {e}\n", 'vermelho'))
+                shutil.copy2(arquivo_completo, instabilidade)
+                os.remove(arquivo_completo)
+                continue
+
+    green = set()
+    red = set()
     contador_erros = 0
+    fila = carregar_fila(xml_bruto)
 
-    carregar_fila(xml_bruto)
+    itens = []
+    while not fila.empty():
+        itens.append(fila.get())
+    random.shuffle(itens)
 
+    for item in itens:
+        fila.put(item)
+    
     falhas_consecutivas = 0
     falhas_656 = 0
 
     while not fila.empty():
+        raiz, x = fila.get()
         janela_validacao_xml.after(0, lambda: campo_query99.insert(
             tk.END, "\n", 'branco'
         ))
-        intervalo_minimo = random.uniform(6.0, 10)
-        raiz, x = fila.get()
-
+        janela_validacao_xml.after(0, lambda: campo_query99.see(tk.END))
+        saida = os.path.join(xml_lapidado, x)
+        instabilidade = os.path.join(xml_instabilidade, x)
+        invalidos = os.path.join(xml_invalido, x)
         arquivo_completo = os.path.join(raiz, x)
-
+        intervalo_minimo = random.uniform(6.0, 10)
         chave_modificada = x.removesuffix('-nfe.xml')
         chave_curta = chave_modificada[25:34].lstrip("0")
 
-        saida = os.path.join(xml_saida, x)
-        instabilidade = os.path.join(xml_instabilidade, x)
-        invalidos = os.path.join(xml_invalido, x)
-
-        # -----------------------------
-        # 1. Se já tem protocolo no XML e se já foi validada em outra chave anteriormente
-        # -----------------------------
-        try:
-            ns = {"nfe": "http://www.portalfiscal.inf.br/nfe"}
-            tree = ET.parse(arquivo_completo)
-            root = tree.getroot()
-
-            prot = root.find(".//nfe:protNFe", ns)
-
-            if chave_curta in green:
-                janela_validacao_xml.after(0, lambda: campo_query99.insert(
+        if chave_curta in green:
+            janela_validacao_xml.after(0, lambda: campo_query99.insert(
                     tk.END,
                     f"🟢 CHAVE {chave_modificada} IGNORADA POIS JÁ FOI ENCONTRADO XML CORRETO DE NUMERAÇÃO: {chave_curta}\n",
                     'amarelo'))
-                fila.task_done() 
-                continue
-
-            if prot is not None:
-                green.add(chave_curta)
-                janela_validacao_xml.after(0, lambda: campo_query99.insert(
-                    tk.END,
-                    f"🟢 CHAVE {chave_modificada} VÁLIDADA DE NUMERAÇÃO: {chave_curta}\n",
-                    'verde'
-                ))
-                red.discard(chave_curta)
-                shutil.copy2(arquivo_completo, saida)
-                fila.task_done() 
-                continue
-
-        except Exception as e:
-            janela_validacao_xml.after(0, lambda e=e: campo_query99.insert(tk.END, f"Erro XML: {e}\n", 'vermelho'))
+            shutil.copy2(arquivo_completo, invalidos)
+            os.remove(arquivo_completo)
             fila.task_done()
-            shutil.copy2(arquivo_completo, instabilidade)
             continue
+            
+
 
         # -----------------------------
         # 2. Consulta SEFAZ
@@ -256,9 +291,10 @@ def validar_xml(certificado, senha, xml_bruto, xml_saida):
                 f"Erro SEFAZ {chave_modificada}: {e}\n",
                 'vermelho'
             ))
-            fila.task_done()
             shutil.copy2(arquivo_completo, instabilidade)
+            os.remove(arquivo_completo)
             espera_segura(min(falhas_consecutivas, 20))
+            fila.task_done()
             continue
 
         # -----------------------------
@@ -267,17 +303,17 @@ def validar_xml(certificado, senha, xml_bruto, xml_saida):
         ret = extrair_prot(response.text)
 
         if not ret:
-            shutil.copy2(arquivo_completo, instabilidade)  
+            shutil.copy2(arquivo_completo, instabilidade)
+            os.remove(arquivo_completo)
             red.add(chave_curta)
             falhas_consecutivas += 1
             espera_segura(min(falhas_consecutivas, 20))
-            fila.task_done() 
-            shutil.copy2(arquivo_completo, instabilidade)
             janela_validacao_xml.after(0, lambda: campo_query99.insert(
                 tk.END,
                 f"🟢 CHAVE {chave_modificada} -> {chave_curta} erro na tradução das informações\n",
                 'branco'
             ))
+            fila.task_done() 
             continue
 
         codigo = ret.get("cStat")
@@ -287,6 +323,7 @@ def validar_xml(certificado, senha, xml_bruto, xml_saida):
         # 4. Autorizado
         # -----------------------------
         if codigo == "100":
+            tree = ET.parse(arquivo_completo)
             contador_erros = 0
             falhas_consecutivas = 0
             falhas_656 = 0
@@ -335,10 +372,13 @@ def validar_xml(certificado, senha, xml_bruto, xml_saida):
                     f"XML montado e salvo: {saida}\n",
                     'verde'
                 ))
+                os.remove(arquivo_completo)
+                fila.task_done() 
+
 
             except Exception as e:
                 janela_validacao_xml.after(0, lambda e=e: campo_query99.insert(tk.END, f"Erro montagem: {e}\n",'vermelho'))
-            fila.task_done() 
+                fila.task_done() 
         # -----------------------------
         # 5. Rejeitado / não encontrado
         # -----------------------------
@@ -356,7 +396,7 @@ def validar_xml(certificado, senha, xml_bruto, xml_saida):
             janela_validacao_xml.after(0, lambda: campo_query99.insert(tk.END, msg, 'roxo'))
             
             fila.put((raiz, x)) # Devolve a nota para tentar de novo após a pausa
-            
+    
             time.sleep(tempo_pausa)
             continue
 
@@ -365,6 +405,7 @@ def validar_xml(certificado, senha, xml_bruto, xml_saida):
             falhas_656 = 0
             red.add(chave_curta)
             shutil.copy2(arquivo_completo, invalidos)
+            os.remove(arquivo_completo)            
             janela_validacao_xml.after(0, lambda: campo_query99.insert(
                 tk.END,
                 f"❌ {codigo} -> {motivo} | {chave_modificada} [{chave_curta}]\n",
@@ -377,17 +418,15 @@ def validar_xml(certificado, senha, xml_bruto, xml_saida):
 
             fila.task_done() 
             continue
-        
-        janela_validacao_xml.after(0, lambda: campo_query99.see(tk.END))
 
     janela_validacao_xml.after(0, lambda: campo_query99.insert(
         tk.END,
         f"\nNÚMERAÇÕES VÁLIDADAS NA SEFAZ: {green}\n",
-        'azul')) 
+        'branco')) 
     janela_validacao_xml.after(0, lambda: campo_query99.insert(
         tk.END,
         f"\nNÚMERAÇÕES NÃO VÁLIDADAS NA SEFAZ: {red}\n",
-        'vermelho'
+        'branco'
     ))
         
     janela_validacao_xml.after(0, lambda: campo_query99.see(tk.END))
@@ -517,8 +556,8 @@ def selecionar_arquivo(label):
         label.insert(0,pasta)
 
 
-def validar_xml_thread(certificado,senha, xml_bruto, xml_saida):
-    threading.Thread(target=validar_xml,args=(certificado,senha, xml_bruto,xml_saida)).start()
+def validar_xml_thread(certificado,senha):
+    threading.Thread(target=validar_xml,args=(certificado,senha)).start()
 
 
 def voltar():
@@ -530,7 +569,7 @@ def janela_validacao():
     global janela_validacao_xml,botao_validar_xml,botao_voltar,caminho_certificado,campo_query99,botao_caminho_certificado
     janela_principal.withdraw()
     janela_validacao_xml = tk.Toplevel()
-    janela_validacao_xml.title("BDX 3.0 Desenvolvido por Gian")
+    janela_validacao_xml.title("BDX 3.2 Desenvolvido por Gian")
     janela_validacao_xml.geometry("1000x800")
     janela_validacao_xml.protocol("WM_DELETE_WINDOW", voltar)
     frame_campos = tk.Frame(janela_validacao_xml,bg=COR_FUNDO)
@@ -551,7 +590,7 @@ def janela_validacao():
     senha = tk.Entry(frame_campos, width=60, show='*')
     senha.grid(row=2, column=1, padx=5)
 
-    botao_validar_xml = tk.Button(frame_botoes,bg=COR_BOTAO,fg=COR_TEXTO, text="Iniciar", command=lambda: validar_xml_thread(caminho_certificado.get(),senha.get(),xml_bruto,xml_lapidado), padx=10, pady=10)
+    botao_validar_xml = tk.Button(frame_botoes,bg=COR_BOTAO,fg=COR_TEXTO, text="Iniciar", command=lambda: validar_xml_thread(caminho_certificado.get(),senha.get()), padx=10, pady=10)
     botao_validar_xml.grid(row=0, column=0,padx=10)
 
     botao_voltar = tk.Button(frame_botoes,bg=COR_BOTAO,fg=COR_TEXTO, text="Voltar", command= voltar, padx=10, pady=10)
@@ -573,7 +612,7 @@ def janela_validacao():
 global campo_query, janela_principal
 janela_principal = tk.Tk()
 janela_principal.protocol("WM_DELETE_WINDOW", fechar)
-janela_principal.title("BDX 3.0 Desenvolvido por Gian")  # Título da janela
+janela_principal.title("BDX 3.2 Desenvolvido por Gian")  # Título da janela
 janela_principal.geometry("600x600")  # Largura x Altura
 janela_principal.configure(bg=COR_FUNDO)
 frame_botoes = tk.Frame(janela_principal, bg=COR_FUNDO)
