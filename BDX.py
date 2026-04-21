@@ -139,6 +139,18 @@ def carregar_fila(xml_bruto):
             fila_local.put((raiz, x))
     return fila_local
 
+
+def tratativa_botao(tipo,janelatipo):
+        if janelatipo == 1:
+            janela_principal.after(0, lambda: botao.config(state=f"{tipo}"))
+            janela_principal.after(0, lambda: botao2.config(state=f"{tipo}"))
+            janela_principal.after(0, lambda: botao4.config(state=f"{tipo}"))
+        else:
+            janela_validacao_xml.after(0, lambda: botao_voltar.config(state=f"{tipo}"))
+            janela_validacao_xml.after(0, lambda: botao_validar_xml.config(state=f"{tipo}"))
+            janela_validacao_xml.after(0, lambda: botao_caminho_certificado.config(state=f"{tipo}"))
+
+
 ultimo_request = 0
 def validar_xml(certificado, senha, estado):
     global ultimo_request
@@ -167,12 +179,10 @@ def validar_xml(certificado, senha, estado):
     if CERT_FILE is None or KEY_FILE is None:
         return
     
-    janela_validacao_xml.after(0, lambda: botao_validar_xml.config(state='disabled'))
-    janela_validacao_xml.after(0, lambda: botao_voltar.config(state='disabled'))
-    janela_validacao_xml.after(0, lambda: botao_caminho_certificado.config(state='disabled'))
+    tratativa_botao('disabled',2)
     green = set()
     red = set()
-    
+
     # -----------------------------
     # 1. Se já tem protocolo no XML e se já foi validada em outra chave anteriormente
     # -----------------------------
@@ -216,10 +226,8 @@ def validar_xml(certificado, senha, estado):
                 os.remove(arquivo_completo)
                 continue
 
-
     match estado:
         case "SP":
-
             url = "https://nfce.fazenda.sp.gov.br/ws/NFeConsultaProtocolo4.asmx"
         case "MG":
             url = "https://nfce.fazenda.mg.gov.br/nfce/services/NFeConsultaProtocolo4"
@@ -264,8 +272,6 @@ def validar_xml(certificado, senha, estado):
             fila.task_done()
             continue
             
-
-
         # -----------------------------
         # 2. Consulta SEFAZ
         # -----------------------------
@@ -438,13 +444,12 @@ def validar_xml(certificado, senha, estado):
     ))
         
     janela_validacao_xml.after(0, lambda: campo_query99.see(tk.END))
-    janela_validacao_xml.after(0, lambda: botao_voltar.config(state='normal'))
-    janela_validacao_xml.after(0, lambda: botao_validar_xml.config(state='normal'))
-    janela_validacao_xml.after(0, lambda: botao_caminho_certificado.config(state='normal'))
+    tratativa_botao('normal',2)
 
 
 def buscar_xml_por_chave():
     arquivo_lista = "chave.txt"
+
     if not os.path.exists(arquivo_lista):
         messagebox.showerror(message='O arquivo "chave.txt" não foi localizado')
         return
@@ -456,10 +461,9 @@ def buscar_xml_por_chave():
     if not os.path.exists(xml_bruto):
         messagebox.showerror(message='A pasta "xml_bruto" não foi localizada')
         return
-
-    pasta_destino = f"{xml_bruto}"
     campo_query.config(state='normal') 
     campo_query.delete("1.0",tk.END)
+    pasta_destino = f"{xml_bruto}"
 
     # Lê a lista de chaves (sem extensão, sem -nfe)
     chaves = []
@@ -468,6 +472,7 @@ def buscar_xml_por_chave():
             linha = linha.strip().lower()
             chaves.append(linha)  
     encontrados = set()
+    tratativa_botao('disabled',1)
     # Percorre a pasta e subpastas
     for raiz, dirs, arquivos in os.walk(pasta_origem):
         for nome_arquivo in arquivos:
@@ -480,21 +485,22 @@ def buscar_xml_por_chave():
                     shutil.copy2(caminho_origem, caminho_destino)
                     encontrados.add(chave)
                     campo_query.insert(tk.END, f"✅ Copiado: {nome_arquivo}\n")
+                    janela_principal.after(0, lambda: campo_query.see(tk.END))
                     break  # evita copiar o mesmo arquivo mais de uma vez
-
     # Mostra os que não foram encontrados
     nao_encontrados = [c for c in chaves if c not in encontrados]
     if nao_encontrados:
-        campo_query.insert(tk.END,"\n⚠️ Arquivos não encontrados:\n")     
+        campo_query.insert(tk.END,"\n⚠️ Lista de chaves não encontradas na pasta docs:\n") 
+        janela_principal.after(0, lambda: campo_query.see(tk.END))
         with open("chaves_nao_encontradas.txt", "w") as arquivo:
                 for c in nao_encontrados:
                     arquivo.write(f"{c}\n")                
                     campo_query.insert(tk.END,f"{c}\n")
     else:
         campo_query.insert(tk.END,"\n🟢 Todos os arquivos foram encontrados e copiados!")
+        janela_principal.after(0, lambda: campo_query.see(tk.END))
 
-    campo_query.config(state='disabled')     
-    campo_query.see(tk.END)
+    tratativa_botao('normal',1)
 
 
 def buscar_xml_por_coo():
@@ -515,12 +521,12 @@ def buscar_xml_por_coo():
     campo_query.config(state='normal') 
     campo_query.delete("1.0",tk.END)
     pasta_destino = f"{xml_bruto}"
-    campo_query.delete("1.0",tk.END)
     with open(arquivo_lista, "r", encoding="utf-8") as f:
         for linha in f:
             linha = linha.strip().lower()
             chaves.append(linha)  
     encontrados = set()
+    tratativa_botao('disabled',1)
     for raiz, dirs, arquivos in os.walk(pasta_origem):
         for nome_arquivo in arquivos:
             if nome_arquivo[-8:] == '-nfe.xml':
@@ -533,21 +539,22 @@ def buscar_xml_por_coo():
                         shutil.copy2(caminho_origem, caminho_destino)
                         encontrados.add(chave)
                         campo_query.insert(tk.END, f"✅ Copiado: {nome_arquivo}\n")
-                        break  # evita copiar o mesmo arquivo mais de uma vez
-                    
+                        janela_principal.after(0, lambda: campo_query.see(tk.END))
+                        break  # evita copiar o mesmo arquivo mais de uma vez         
     # Mostra os que não foram encontrados
     nao_encontrados = [c for c in chaves if c not in encontrados]
     if nao_encontrados:
-            campo_query.insert(tk.END,"\n⚠️ Arquivos não encontrados:\n")
+            campo_query.insert(tk.END,"\n⚠️ Lista de coo que não tem xml na pasta docs:\n")
+            janela_principal.after(0, lambda: campo_query.see(tk.END))
             with open("coos_nao_encontrados.txt", "w") as arquivo:
                 for c in nao_encontrados:
                     arquivo.write(f"{c}\n")     
                     campo_query.insert(tk.END,f"{c}\n")
     else:
         campo_query.insert(tk.END,"\n🟢 Todos os arquivos foram encontrados e copiados!")
-            
-    campo_query.config(state='disabled') 
-    campo_query.see(tk.END)    
+        janela_principal.after(0, lambda: campo_query.see(tk.END))
+
+    tratativa_botao('normal',1)    
  
 
 def selecionar_pasta(label):
@@ -566,6 +573,14 @@ def selecionar_arquivo(label):
 
 def validar_xml_thread(certificado,senha,estado):
     threading.Thread(target=validar_xml,args=(certificado,senha,estado)).start()
+
+
+def chave_thread():
+    threading.Thread(target=buscar_xml_por_chave).start()
+
+
+def coo_thread():
+    threading.Thread(target=buscar_xml_por_coo).start()
 
 
 def voltar():
@@ -635,7 +650,6 @@ def janela_validacao():
     ).grid(row=i//9, column=i%9, sticky='w')
     uf_var.set("SP")  # 👈 força depois
 
-  
     botao_validar_xml = tk.Button(frame_botoes,bg=COR_BOTAO,fg=COR_TEXTO, text="Iniciar", command=lambda: validar_xml_thread(caminho_certificado.get(),senha.get(), uf_var.get()), padx=10, pady=10)
     botao_validar_xml.grid(row=0, column=0,padx=10)
 
@@ -659,12 +673,12 @@ janela_principal.configure(bg=COR_FUNDO)
 frame_botoes = tk.Frame(janela_principal, bg=COR_FUNDO)
 frame_botoes.pack(pady=10)
 botao = tk.Button(frame_botoes, text="Xml por chave",
-                  command=buscar_xml_por_chave,
+                  command=chave_thread,
                   padx=20, pady=20, fg=COR_TEXTO, bg=COR_BOTAO)
 botao.pack(side="left", padx=5)
 
 botao2 = tk.Button(frame_botoes, text="Xml por coo",
-                   command=buscar_xml_por_coo,
+                   command=coo_thread,
                    padx=20, pady=20, fg=COR_TEXTO, bg=COR_BOTAO)
 botao2.pack(side="left", padx=5)
 
