@@ -2,6 +2,7 @@ import os
 import shutil
 import tkinter as tk
 from tkinter import messagebox
+from tkinter import ttk 
 import requests
 import xml.etree.ElementTree as ET
 import threading
@@ -139,7 +140,7 @@ def carregar_fila(xml_bruto):
     return fila_local
 
 ultimo_request = 0
-def validar_xml(certificado, senha):
+def validar_xml(certificado, senha, estado):
     global ultimo_request
     if not os.path.exists(xml_bruto):
         janela_validacao_xml.after(0, lambda: messagebox.showerror("Erro", "xml_bruto não encontrado!"))
@@ -215,6 +216,14 @@ def validar_xml(certificado, senha):
                 os.remove(arquivo_completo)
                 continue
 
+
+    match estado:
+        case "SP":
+
+            url = "https://nfce.fazenda.sp.gov.br/ws/NFeConsultaProtocolo4.asmx"
+        case "MG":
+            url = "https://nfce.fazenda.mg.gov.br/nfce/services/NFeConsultaProtocolo4"
+
     green = set()
     red = set()
     contador_erros = 0
@@ -270,7 +279,6 @@ def validar_xml(certificado, senha):
             xml_nfe = limpar(xml_consulta(chave_modificada))
             soap_xml = montar_soap(xml_nfe)
 
-            url = "https://nfce.fazenda.sp.gov.br/ws/NFeConsultaProtocolo4.asmx"
             headers = {"Content-Type": "application/soap+xml; charset=utf-8"}
 
             response = requests.post(
@@ -556,8 +564,8 @@ def selecionar_arquivo(label):
         label.insert(0,pasta)
 
 
-def validar_xml_thread(certificado,senha):
-    threading.Thread(target=validar_xml,args=(certificado,senha)).start()
+def validar_xml_thread(certificado,senha,estado):
+    threading.Thread(target=validar_xml,args=(certificado,senha,estado)).start()
 
 
 def voltar():
@@ -566,40 +574,74 @@ def voltar():
 
 
 def janela_validacao():
-    global janela_validacao_xml,botao_validar_xml,botao_voltar,caminho_certificado,campo_query99,botao_caminho_certificado
+    opcoes = [
+    "SP", "MG"]
+    global janela_validacao_xml,botao_validar_xml,botao_voltar,caminho_certificado,campo_query99,botao_caminho_certificado,uf_var
     janela_principal.withdraw()
     janela_validacao_xml = tk.Toplevel()
-    janela_validacao_xml.title("BDX 3.2 Desenvolvido por Gian")
+    janela_validacao_xml.title("BDX 3.3 Desenvolvido por Gian")
     janela_validacao_xml.geometry("1000x800")
     janela_validacao_xml.protocol("WM_DELETE_WINDOW", voltar)
-    frame_campos = tk.Frame(janela_validacao_xml,bg=COR_FUNDO)
-    frame_campos.pack(pady=10)
-    frame_botoes = tk.Frame(janela_validacao_xml,bg=COR_FUNDO)
-    frame_botoes.pack(pady=10)
     janela_validacao_xml.configure(bg=COR_FUNDO)
-    scroll = tk.Scrollbar(janela_validacao_xml)
+
+    # FRAME PRINCIPAL (tudo de cima)
+    frame_topo = tk.Frame(janela_validacao_xml, bg=COR_FUNDO)
+    frame_topo.pack(fill="x")
+
+    frame_campos = tk.Frame(frame_topo, bg=COR_FUNDO)
+    frame_campos.pack(pady=10)
+
+    frame_botoes = tk.Frame(frame_topo, bg=COR_FUNDO)
+    frame_botoes.pack(pady=10)
+
+    frame_texto = tk.Frame(janela_validacao_xml, bg=COR_FUNDO)
+    frame_texto.pack(fill="both", expand=True)
+    scroll = tk.Scrollbar(frame_texto)
     scroll.pack(side="right", fill="y")
+    campo_query99 = tk.Text(
+    frame_texto,
+    width=130,
+    height=30,
+    bg=COR_FRAME,
+    yscrollcommand=scroll.set
+                            )                           
+    campo_query99.pack(side='left', fill="both", expand=True)
+
+    scroll.config(command=campo_query99.yview)
 
     tk.Label(frame_campos, text="Caminho do certificado:",fg=COR_TEXTO,bg=COR_FUNDO).grid(row=1, column=0, padx=5)
     caminho_certificado = tk.Entry(frame_campos, width=60,bg=COR_TEXTO)
     caminho_certificado.grid(row=1, column=1, padx=5)
     botao_caminho_certificado = tk.Button(frame_campos, bg=COR_BOTAO,fg=COR_TEXTO, text="📁", command=lambda: selecionar_arquivo(caminho_certificado), padx=3, pady=3)
     botao_caminho_certificado.grid(row=1, column=2)
-
+    
     tk.Label(frame_campos, text="Senha do certificado:",fg=COR_TEXTO,bg=COR_FUNDO).grid(row=2, column=0, padx=5)
     senha = tk.Entry(frame_campos, width=60, show='*')
     senha.grid(row=2, column=1, padx=5)
 
-    botao_validar_xml = tk.Button(frame_botoes,bg=COR_BOTAO,fg=COR_TEXTO, text="Iniciar", command=lambda: validar_xml_thread(caminho_certificado.get(),senha.get()), padx=10, pady=10)
+    tk.Label(frame_campos, text="Servidor de consulta:",fg=COR_TEXTO,bg=COR_FUNDO).grid(row=3, column=0, padx=5)
+    uf_var = tk.StringVar()
+    frame_ufs = tk.Frame(frame_campos, bg=COR_FUNDO)
+    frame_ufs.grid(row=3, column=1, sticky='w', pady=10)
+    for i, uf in enumerate(opcoes):
+        tk.Radiobutton(
+            frame_ufs,
+        text=uf,
+        variable=uf_var,
+        value=uf,
+        bg=COR_FUNDO,
+        fg=COR_TEXTO,
+        selectcolor=COR_FUNDO
+    ).grid(row=i//9, column=i%9, sticky='w')
+    uf_var.set("SP")  # 👈 força depois
+
+  
+    botao_validar_xml = tk.Button(frame_botoes,bg=COR_BOTAO,fg=COR_TEXTO, text="Iniciar", command=lambda: validar_xml_thread(caminho_certificado.get(),senha.get(), uf_var.get()), padx=10, pady=10)
     botao_validar_xml.grid(row=0, column=0,padx=10)
 
     botao_voltar = tk.Button(frame_botoes,bg=COR_BOTAO,fg=COR_TEXTO, text="Voltar", command= voltar, padx=10, pady=10)
     botao_voltar.grid(row=0,column=1,padx=10)
-    
 
-    campo_query99 = tk.Text(janela_validacao_xml, width=130, height=100,bg=COR_FRAME,yscrollcommand=scroll.set)
-    campo_query99.pack(pady=5,side='bottom',fill="both",expand=True)
-    scroll.config(command=campo_query99.yview)
     campo_query99.tag_config("verde", foreground="green")
     campo_query99.tag_config("vermelho", foreground="red")
     campo_query99.tag_config("azul", foreground="blue")
@@ -608,11 +650,10 @@ def janela_validacao():
     campo_query99.tag_config("rosa", foreground="pink")
     campo_query99.tag_config("roxo", foreground="purple")
 
-
 global campo_query, janela_principal
 janela_principal = tk.Tk()
 janela_principal.protocol("WM_DELETE_WINDOW", fechar)
-janela_principal.title("BDX 3.2 Desenvolvido por Gian")  # Título da janela
+janela_principal.title("BDX 3.3 Desenvolvido por Gian")  # Título da janela
 janela_principal.geometry("600x600")  # Largura x Altura
 janela_principal.configure(bg=COR_FUNDO)
 frame_botoes = tk.Frame(janela_principal, bg=COR_FUNDO)
@@ -634,4 +675,5 @@ botao4.pack(side="left", padx=5)
 
 campo_query = tk.Text(janela_principal, width=120, height=100,bg=COR_FRAME,fg="white",state='disabled')
 campo_query.pack(pady=5)
+
 janela_principal.mainloop()
